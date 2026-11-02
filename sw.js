@@ -1,5 +1,5 @@
 // Будни оператора: работа без интернета. Игра отдаётся из памяти сразу, свежая версия подгружается в фоне и включается при следующем запуске.
-const V = 'budni-v19';
+const V = 'budni-v20';
 const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(V).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

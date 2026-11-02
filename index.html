@@ -2495,9 +2495,69 @@ window.BO_RADIO = (() => {
       crackle() {
         noise(.025, .05 + Math.random() * .05, 4000 + Math.random() * 3000, 'highpass', 1);
       },
+      // --- еле слышное потрескивание тлеющего табака при затяжке
+      ember() {
+        noise(.02, .012 + Math.random() * .012, 5000 + Math.random() * 3000, 'highpass', 1);
+      },
       // --- вдох через сигарету
       inhale() {
-        noise(1.2, .05, 900, 'bandpass', 1.5, 0, 2000);
+        // вдох: мягкий шум воздуха, набирает силу и «поднимается», звучит пока держишь; возвращает стоп
+        if (!ac || mut) {
+          return () => {};
+        }
+        const t = ac.currentTime, src = ac.createBufferSource(), hp = ac.createBiquadFilter(), bp = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), g = ac.createGain();
+        const sh = ac.createBufferSource(), shF = ac.createBiquadFilter(), shG = ac.createGain();
+        src.buffer = sh.buffer = NB;
+        src.loop = sh.loop = true;
+        hp.type = 'highpass';
+        hp.frequency.value = 250;
+        bp.type = 'bandpass';
+        bp.Q.value = .9;
+        bp.frequency.setValueAtTime(520, t);
+        bp.frequency.exponentialRampToValueAtTime(1500, t + 1.4);
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(1800, t);
+        lp.frequency.exponentialRampToValueAtTime(3200, t + 1.4);
+        g.gain.setValueAtTime(.0001, t);
+        g.gain.exponentialRampToValueAtTime(.09, t + .18);
+        g.gain.linearRampToValueAtTime(.13, t + 1.2);
+        // лёгкое «сссс» через фильтр сигареты
+        shF.type = 'bandpass';
+        shF.Q.value = 2.5;
+        shF.frequency.setValueAtTime(3800, t);
+        shF.frequency.linearRampToValueAtTime(4600, t + 1.4);
+        shG.gain.setValueAtTime(.0001, t);
+        shG.gain.exponentialRampToValueAtTime(.018, t + .3);
+        src.connect(hp);
+        hp.connect(bp);
+        bp.connect(lp);
+        lp.connect(g);
+        g.connect(out);
+        sh.connect(shF);
+        shF.connect(shG);
+        shG.connect(out);
+        src.start(t, Math.random());
+        sh.start(t, Math.random());
+        // страховка: если окно закрыли посреди затяжки — звук сам гаснет
+        src.stop(t + 3);
+        sh.stop(t + 3);
+        let off = false;
+        return () => {
+          if (off) {
+            return;
+          }
+          off = true;
+          const e = ac.currentTime;
+          [g, shG].forEach(n => {
+            n.gain.cancelScheduledValues(e);
+            n.gain.setValueAtTime(Math.max(.0001, n.gain.value), e);
+            n.gain.exponentialRampToValueAtTime(.0001, e + .1);
+          });
+          try {
+            src.stop(e + .15);
+            sh.stop(e + .15);
+          } catch (_) {}
+        };
       },
       // --- выдох дыма
       exhale() {
@@ -30049,7 +30109,11 @@ window.BO_RADIO = (() => {
     };
     // фаза: ready — можно тянуть, in — тянем, out — выдыхаем
     let phase = 'ready', L = 0, rate = .5, puffs = 0, coughs = 0, t = 0, glow = 0, shake = 0, crT = 0, pd = false, done = false;
-    let zone = { a: .58, b: .8 };
+    let zone = { a: .58, b: .8 }, inhStop = null;
+    const inhEnd = () => {
+      inhStop && inhStop();
+      inhStop = null;
+    };
     const smoke = [];
     const newZone = () => {
       const mid = .55 + Math.random() * .22;
@@ -30069,6 +30133,7 @@ window.BO_RADIO = (() => {
     const cigLen = () => 64 * (1 - puffs / NEED) + 26;
     const exhale = big => {
       phase = 'out';
+      inhEnd();
       S.exhale();
       for (let i = 0; i < (big ? 26 : 12); i++) {
         smoke.push({ x: MOUTH.x + 6, y: MOUTH.y - 2, vx: 50 + Math.random() * 110, vy: -25 - Math.random() * 45, r: 5 + Math.random() * 7, a: .5, g: 18 + Math.random() * 14 });
@@ -30077,6 +30142,7 @@ window.BO_RADIO = (() => {
     const cough = () => {
       coughs++;
       shake = .6;
+      inhEnd();
       S.cough();
       for (let i = 0; i < 30; i++) {
         smoke.push({ x: MOUTH.x - 10, y: MOUTH.y + 2, vx: (Math.random() - .5) * 300, vy: -20 - Math.random() * 150, r: 5 + Math.random() * 9, a: .7, g: 24 });
@@ -30094,7 +30160,9 @@ window.BO_RADIO = (() => {
         if (phase === 'ready') {
           if (holding()) {
             phase = 'in';
-            S.inhale();
+            inhEnd();
+            inhStop = S.inhale();
+            crT = .25 + Math.random() * .3;
           } else {
             say(puffs ? __L('Ещё затяжка. Зажми и отпусти в зелёной зоне.') : __L('Зажми кнопку мыши (или пробел) — затянись.'));
           }
@@ -30103,8 +30171,8 @@ window.BO_RADIO = (() => {
           glow = Math.min(1, glow + dt * 4);
           crT -= dt;
           if (crT <= 0) {
-            crT = .09;
-            S.crackle();
+            crT = .35 + Math.random() * .45;
+            S.ember();
           }
           if (L >= 1) {
             cough();
