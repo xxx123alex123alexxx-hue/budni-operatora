@@ -728,12 +728,26 @@ if (window.__LANG === 'en') {
   function W(...a) {
     const c = new AC(...a);
     list.push(c);
+    // пока игра свёрнута - любой resume() (из игры, музыки, паузы) не включает звук, а запоминается до возврата
+    const rs = c.resume.bind(c);
+    c.resume = function () {
+      if (window.BO_HIDDEN) {
+        c.__boSus = true;
+        return Promise.resolve();
+      }
+      return rs();
+    };
+    if (window.BO_HIDDEN) {
+      try { c.suspend(); c.__boSus = true; } catch (e) {}
+    }
     return c;
   }
   W.prototype = AC.prototype;
   window.AudioContext = W;
   window.webkitAudioContext = W;
+  window.BO_HIDDEN = false;
   window.BO_BG = hid => {
+    window.BO_HIDDEN = !!hid;
     list.forEach(c => {
       try {
         if (hid) {
@@ -750,6 +764,15 @@ if (window.__LANG === 'en') {
     });
   };
   document.addEventListener('visibilitychange', () => window.BO_BG(document.hidden));
+  window.addEventListener('pagehide', () => window.BO_BG(true));
+  window.addEventListener('pageshow', () => window.BO_BG(document.hidden));
+  // Capacitor (APK): событие сворачивания приложения, если плагин App доступен
+  try {
+    const AP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (AP && AP.addListener) {
+      AP.addListener('appStateChange', st => window.BO_BG(!st.isActive));
+    }
+  } catch (e) {}
 })();
 </script>
 <script>
